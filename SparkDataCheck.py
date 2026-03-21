@@ -16,13 +16,14 @@ class SparkDataCheck:
     @classmethod
     def load_pyspark(self, spark, filePath: str):
         """
-        Loads the class via spark using the following parameters:
+        Loads the class via spark. Note that headers are assumed to be
+        true.
         self - this instance of SparkDataCheck
         spark - a SparkSession instance
         filePath - a string file path to the destination file.
         Returns an instance of this class.
         """
-        df = spark.read.format("csv").load(filePath)
+        df = spark.read.format("csv").option("header", "true").load(filePath)
         sdc = self(df)
         return sdc
     
@@ -39,7 +40,7 @@ class SparkDataCheck:
         sdc = self(df)
         return sdc
     
-    def validate_numeric(self, col: str, lower, upper):
+    def validate_numeric(self, col: str, lower = None, upper = None):
         """
         Validates a specified numeric numeric column
         col - a string representing the name of the relevant column
@@ -51,23 +52,26 @@ class SparkDataCheck:
         column = F.col(col)
         
         #Check if the supplied column is an eligible type
-        eligibleTypes = ["float", "int", "longint", "bigint", "double", "integer"]    
-        if not column.dtypes.isin(eligibleTypes):
-            print("Please provide a numeric column."
+        eligibleTypes = ["float", "int", "longint", "bigint", "double", "integer"]
+        dataTypes = dict(df.dtypes)
+        if not dataTypes[col] in (eligibleTypes):
+            print("Please provide a numeric column.")
             return df
         
         #Check if at least one of the lower or upper bound is provided
         #If so, perform the requisite validation
         if lower is None:
             if upper is None:
-                return "Please provide at least one bound."
+                print("Please provide at least one bound.")
+                return df
             else:
-                return df.withColumn("passes_validation", column >= upper)
+                return df.withColumn("passes_validation", column <= upper)
         elif upper is None:
             if lower is None:
-                return "Please provide at least one bound."
+                print("Please provide at least one bound.")
+                return df
             else:   
-                return df.withColumn("passes_validation", column <= upper)
+                return df.withColumn("passes_validation", column >= lower)
         else:
             return df.withColumn("passes_num_validation", column.between(lower, upper))
             
@@ -82,8 +86,9 @@ class SparkDataCheck:
         column = F.col(col)
         
         #Check if the supplied column is an eligible type
-        eligibleTypes = ["str"]    
-        if not column.dtypes.isin(eligibleTypes):
+        eligibleTypes = ["str", "string"]    
+        dataTypes = dict(df.dtypes)
+        if not dataTypes[col] in (eligibleTypes):
             print("Please provide a string column.")
             return df
         
@@ -98,7 +103,7 @@ class SparkDataCheck:
         df = self.df
         column = F.col(col)
                   
-        return df.withColumn("has_null_value", column.isNULL())
+        return df.withColumn("has_null_value", column.isNull())
                   
     def get_min_max(self, col = None, groupCol = None):
         """
@@ -111,9 +116,10 @@ class SparkDataCheck:
                   
         #Check if the supplied column is an eligible type
         eligibleTypes = ["float", "int", "longint", "bigint", "double", "integer"]    
-        if not df[col].dtypes.isin(eligibleTypes):
+        dataTypes = dict(df.dtypes)
+        if not dataTypes[col] in (eligibleTypes):
             print("Please provide a numeric column.")
-            return None
+            return df
         
         #Check if a column is supplied, if not, return the minimum and maximum of all numeric columns
         if col == None:
@@ -150,17 +156,21 @@ class SparkDataCheck:
         df = self.df
         
         eligibleTypes = ["str"]    
-        if not df[col].dtypes.isin(eligibleTypes) or df[col2].dtypes.isin(eligibleTypes):
-            print("Please ensure each column provided is has string values.")
-            return None
+        dataTypes = dict(df.dtypes)
+        if not dataTypes[col] in (eligibleTypes):
+            print("Please provide a string column.")
+            return df
         
         if col2 == None:
             pdDf = df.select(col) \
             .agg(count(col)) \
             .toPandas()
         else:
+            if not dataTypes[col2] in (eligibleTypes):
+                print("Please provide a string column for the grouping variable.")
+                return df
             pdDf = df.select([col, col2]) \
             .agg(count(col), count(col2)) \
             .toPandas()
         
-       return pdDf 
+        return pdDf
