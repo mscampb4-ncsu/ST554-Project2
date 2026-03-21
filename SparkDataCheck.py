@@ -113,64 +113,69 @@ class SparkDataCheck:
         Returns a pandas dataframe.
         """
         df = self.df
-                  
-        #Check if the supplied column is an eligible type
-        eligibleTypes = ["float", "int", "longint", "bigint", "double", "integer"]    
+        eligibleTypes = ["float", "int", "longint", "bigint", "double", "integer"]
         dataTypes = dict(df.dtypes)
-        if not dataTypes[col] in (eligibleTypes):
-            print("Please provide a numeric column.")
-            return df
         
         #Check if a column is supplied, if not, return the minimum and maximum of all numeric columns
         if col == None:
             #Select all the numeric columns and get the requisite summaries
-            colToSelect = [x for x in df.columns if df[x].dtype in eligibleTypes]
-            if group_col == None:
+            colToSelect = [x for x in df.columns if dataTypes[x] in eligibleTypes]
+            
+            #Build the list of expressions necessary to call .agg()
+            colToAggMin = [F.min(col) for col in colToSelect]
+            colToAggMax = [F.max(col) for col in colToSelect]
+            
+            if groupCol == None:
                 pdDf = df.select(colToSelect) \
-                .min() \
-                .max() \
+                .agg(*colToAggMin, *colToAggMax) \
                 .toPandas()
             else:
+                colToSelect = colToSelect + [groupCol]
                 pdDf = df.select(colToSelect) \
                 .groupBy(groupCol) \
-                .min() \
-                .max() \
+                .agg(*colToAggMin, *colToAggMax) \
                 .toPandas()
         else:
-            if group_col == None:
+            #Check if the supplied column is an eligible type    
+            
+            if not dataTypes[col] in (eligibleTypes):
+                print("Please provide a numeric column.")
+                return df
+            
+            if groupCol == None:
                 pdDf = df.select(col) \
-                .min() \
-                .max() \
+                .agg(F.min(col), F.max(col)) \
                 .toPandas()
             else:
-                pdDf = df.select(col) \
+                pdDf = df.select(col, groupCol) \
                 .groupBy(groupCol) \
-                .min() \
-                .max() \
+                .agg(F.min(col), F.max(col)) \
                 .toPandas()
          
         return pdDf
     
-    def get_count(self, col, col2 = None):
+    def get_count(self, col, groupCol = None):
                   
         df = self.df
         
-        eligibleTypes = ["str"]    
+        eligibleTypes = ["str", "string"]   
         dataTypes = dict(df.dtypes)
         if not dataTypes[col] in (eligibleTypes):
             print("Please provide a string column.")
             return df
         
-        if col2 == None:
+        if groupCol == None:
             pdDf = df.select(col) \
-            .agg(count(col)) \
+            .groupBy(col) \
+            .agg(F.count(col)) \
             .toPandas()
         else:
-            if not dataTypes[col2] in (eligibleTypes):
+            if not dataTypes[groupCol] in (eligibleTypes):
                 print("Please provide a string column for the grouping variable.")
                 return df
-            pdDf = df.select([col, col2]) \
-            .agg(count(col), count(col2)) \
+            pdDf = df.select(col, groupCol) \
+            .groupBy(col, groupCol) \
+            .agg(F.count(col)) \
             .toPandas()
         
         return pdDf
